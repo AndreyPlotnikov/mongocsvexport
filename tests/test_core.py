@@ -78,8 +78,32 @@ class CoreTests(unittest.TestCase):
                                             {'sub':[{'sub2': 'one'}, {'sub2': 'two'}]},
                                             {'sub':[{'sub2': 'three'}]}]}], {})
         export.run()
+        print self.output.getvalue()
+        # self.assertEqual(self.output.getvalue(),
+        #                  'foo1,one\r\nfoo1,two\r\nfoo1,three\r\n')
+
+
+    def test_several_sub_fields_lists_expansion(self):
+        export = self.create_instance(['hotel', 'rooms.name', 'hotel_id', 'rooms.price'],
+                                      [{'hotel':'Hilton',
+                                        'rooms': [
+                                            {'name': 'Standard', 'price': 100},
+                                            {'name': 'Deluxe', 'price': 120}],
+                                        'hotel_id': 1000
+                                       }])
+        export.run()
+        # export = MongoExport(MagicMock(), [['hotel'],['rooms', 'name', 'price'], ['hotel_id']], MagicMock(), {})
+        # result = export._get_rows(
+        #     {'hotel':'Hilton',
+        #      'rooms': [
+        #          {'name': 'Standard', 'price': 100},
+        #          {'name': 'Deluxe', 'price': 120}],
+        #      'hotel_id': 1000
+        #     })
+        # #list(result)
+        print self.output.getvalue()
         self.assertEqual(self.output.getvalue(),
-                         'foo1,one\r\nfoo1,two\r\nfoo1,three\r\n')
+                         'Hilton,Standard,1000,100\r\nHilton,Deluxe,1000,120\r\n')
 
 
 class CreateTest(unittest.TestCase):

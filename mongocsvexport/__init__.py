@@ -4,6 +4,7 @@ import argparse
 import itertools
 import pymongo
 import csv
+from collections import OrderedDict
 
 def get_params(prefix, args):
     """Extract params with given prefix from args dict"""
@@ -14,6 +15,14 @@ def get_params(prefix, args):
     return params
 
 
+def flatten(some_list):
+    for element in some_list:
+        if type(element) in (tuple, list):
+            for item in flatten(element):
+                yield item
+        else:
+            yield element
+
 class MongoExport(object):
 
     defaults = {
@@ -22,12 +31,12 @@ class MongoExport(object):
     }
 
     def __init__(self, collection, fields, output, config):
-        self.fields = [f.split('.') for f in fields]
         self.config = self.defaults.copy()
         self.config.update(config)
         self.collection = collection
         self._output = self._init_output(output)
         self._writer = csv.writer(self._output)
+        self._init_fields(fields)
 
     @classmethod
     def create(cls, db_name, coll_name, fields, output, config):
@@ -41,6 +50,33 @@ class MongoExport(object):
         for doc in self._doc_iter():
             for row in self._get_rows(doc):
                 self._writer.writerow(row)
+
+    def _init_fields(self, fields):
+        self._fields_order_map = {}
+        tree = OrderedDict()
+        for i, field in enumerate(fields):
+            path = field.split('.')
+            el = tree
+            for item in path:
+                val = el.get(item)
+                if not val:
+                    el[item] = val = (i,OrderedDict())
+                el = val[1]
+        self.fields = []
+        order = [0]
+        def walk(node, l):
+            for k,v in node.iteritems():
+                if not v[1]:
+                    l.append([k])
+                    self._fields_order_map[order[0]] = v[0]
+                    order[0] += 1
+                else:
+                    subl = [k]
+                    l.append(subl)
+                    walk(v[1], subl)
+
+        walk(tree, self.fields)
+        print self._fields_order_map
 
     def _init_output(self, output):
         if isinstance(output, basestring):
@@ -56,8 +92,36 @@ class MongoExport(object):
 
     def _get_rows(self, doc):
         # generate output rows for given document
-        rows = (self._get_values(doc, field) for field in self.fields)
-        return itertools.product(*rows)
+        rows = [self._get_values(doc, field) for field in self.fields]
+        #print rows
+        #rows = list(itertools.chain(*rows))
+        #print rows
+        for row in itertools.product(*rows):
+            #print list(row)
+            #row = itertools.chain(*row)
+            #print list(row)
+            # row = sorted(((i,item) for i,item in enumerate(flatten(row))),
+            #              key=lambda x:self._fields_order_map[x[0]])
+            # row = [f[1]for f in row]
+            yield row
+
+    # def _get_values(self, doc, path):
+    #     # generate all values for document's field
+    #     field = path[0]
+    #     if not field:
+    #         val = doc
+    #     else:
+    #         val = doc.get(field)
+    #     if not isinstance(val, list):
+    #         val = [val]
+    #     if len(path) > 1:
+    #         for v in val:
+    #             for subv in self._get_values(v, path[1:]):
+    #                 yield subv
+    #     else:
+    #         for v in val:
+    #             yield self._serialize(v)
+    #
 
     def _get_values(self, doc, path):
         # generate all values for document's field
@@ -66,15 +130,20 @@ class MongoExport(object):
             val = doc
         else:
             val = doc.get(field)
+        #print doc, path, val
         if not isinstance(val, list):
             val = [val]
         if len(path) > 1:
+            result = []
             for v in val:
-                for subv in self._get_values(v, path[1:]):
-                    yield subv
+                for subpath in path[1:]:
+                    subresult = self._get_values(v, subpath)
+                    for r in subresult:
+                        result.append(r)
+            return result
         else:
-            for v in val:
-                yield self._serialize(v)
+            return [self._serialize(v) for v in val]
+
 
     def _serialize(self, val):
         if val is None:

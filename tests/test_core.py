@@ -50,7 +50,7 @@ class CoreTests(unittest.TestCase):
                          'foo1,foo2\r\n')
 
     def test_trivial_list_expansion(self):
-        export = self.create_instance(['f1','f2.'],
+        export = self.create_instance(['f1','f2'],
                                       [{'f1':'foo1', 'f2': ['one','two']}], {})
         export.run()
         self.assertEqual(self.output.getvalue(),
@@ -119,7 +119,7 @@ class CreateTest(unittest.TestCase):
                                         output, config)
         self.assertEqual(len(mongo_mock.call_args_list), 1)
         self.assertEqual(mongo_mock.call_args_list[0][1]['host'], 'localhost:27034')
-        self.assertEqual(export.fields, [['f1']])
+        self.assertEqual(export.fields, ['f1'])
         self.assertEqual(export.config['limit'], 100)
 
 

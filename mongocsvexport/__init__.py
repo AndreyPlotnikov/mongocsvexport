@@ -5,6 +5,8 @@ import itertools
 import pymongo
 import csv
 from collections import OrderedDict
+import types
+
 
 def get_params(prefix, args):
     """Extract params with given prefix from args dict"""
@@ -14,14 +16,80 @@ def get_params(prefix, args):
             params[k[len(prefix):]] = v
     return params
 
-
-def flatten(some_list):
-    for element in some_list:
-        if type(element) in (tuple, list):
-            for item in flatten(element):
-                yield item
+def flatten_iters_tree(l):
+    for item in l:
+        if type(item) in (types.GeneratorType, list, tuple):
+            for subitem in flatten_iters_tree(item):
+                yield subitem
         else:
-            yield element
+            yield item
+
+def tuple_startswith(t1, t2):
+    t1_len = len(t1)
+    for i, item in enumerate(t2):
+        if i >= t1_len:
+            return False
+        if item != t1[i]:
+            return False
+    return True
+
+class FieldValue(object):
+
+    __slots__ = ('path', 'value')
+
+    def __init__(self, path, value):
+        self.path = path
+        self.value = value
+
+    def __repr__(self):
+        return 'FieldValue({}, {})'.format(repr(self.path), repr(self.value))
+
+def expand_dict(doc, fields, path=()):
+
+    local_fields = [f[-1] for f in fields if tuple_startswith(f, path) and len(f) - len(path) == 1]
+    absent_fields = []
+    for local_field in local_fields:
+        if local_field not in doc:
+            absent_fields.append(local_field)
+
+    def check_field(path, exact=True):
+        compare = (lambda p1, p2: p1 == p2) if exact else (lambda p1, p2: tuple_startswith(p1, p2))
+        for field in fields:
+            if compare(field, path):
+                return True
+        return False
+
+    def expand_list(l, fields, path=()):
+        for item in l:
+            if isinstance(item, dict):
+                for subitem in expand_dict(item, fields, path):
+                    yield subitem
+            else:
+                yield FieldValue(path, item)
+
+    def tuple_iter():
+        for gr_key, group in itertools.groupby(
+                itertools.chain(doc.iteritems(), ((f, None) for f in absent_fields)),
+                lambda val: 2 if type(val[1]) in (types.GeneratorType, list) else 1 if isinstance(val[1], dict) else 0):
+            if gr_key == 0:
+                def field_filter():
+                    for k,v in group:
+                        fpath = path + (k,)
+                        if check_field(fpath, True):
+                            yield FieldValue(fpath, v)
+                yield [tuple(field_filter())]
+            else:
+                expand = expand_dict if gr_key == 1 else expand_list
+                for k,v in group:
+                    fpath = path + (k,)
+                    if check_field(fpath, False):
+                        yield expand(v, fields, fpath)
+
+    tuples = tuple_iter()
+    tuples = itertools.product(*tuples)
+    tuples = (tuple(flatten_iters_tree(t)) for t in tuples)
+    return tuples
+
 
 class MongoExport(object):
 
@@ -34,6 +102,7 @@ class MongoExport(object):
         self.config = self.defaults.copy()
         self.config.update(config)
         self.collection = collection
+        self.fields = fields
         self._output = self._init_output(output)
         self._writer = csv.writer(self._output)
         self._init_fields(fields)
@@ -52,31 +121,10 @@ class MongoExport(object):
                 self._writer.writerow(row)
 
     def _init_fields(self, fields):
-        self._fields_order_map = {}
-        tree = OrderedDict()
+        self._fields_order_map = OrderedDict()
         for i, field in enumerate(fields):
-            path = field.split('.')
-            el = tree
-            for item in path:
-                val = el.get(item)
-                if not val:
-                    el[item] = val = (i,OrderedDict())
-                el = val[1]
-        self.fields = []
-        order = [0]
-        def walk(node, l):
-            for k,v in node.iteritems():
-                if not v[1]:
-                    l.append([k])
-                    self._fields_order_map[order[0]] = v[0]
-                    order[0] += 1
-                else:
-                    subl = [k]
-                    l.append(subl)
-                    walk(v[1], subl)
-
-        walk(tree, self.fields)
-        print self._fields_order_map
+            path = tuple(field.split('.'))
+            self._fields_order_map[path] = i
 
     def _init_output(self, output):
         if isinstance(output, basestring):
@@ -92,17 +140,9 @@ class MongoExport(object):
 
     def _get_rows(self, doc):
         # generate output rows for given document
-        rows = [self._get_values(doc, field) for field in self.fields]
-        #print rows
-        #rows = list(itertools.chain(*rows))
-        #print rows
-        for row in itertools.product(*rows):
-            #print list(row)
-            #row = itertools.chain(*row)
-            #print list(row)
-            # row = sorted(((i,item) for i,item in enumerate(flatten(row))),
-            #              key=lambda x:self._fields_order_map[x[0]])
-            # row = [f[1]for f in row]
+        for row in expand_dict(doc, self._fields_order_map.keys()):
+            row = sorted(row, key=lambda fv: self._fields_order_map[fv.path])
+            row = tuple(self._serialize(f.value) for f in row)
             yield row
 
     # def _get_values(self, doc, path):
@@ -123,26 +163,26 @@ class MongoExport(object):
     #             yield self._serialize(v)
     #
 
-    def _get_values(self, doc, path):
-        # generate all values for document's field
-        field = path[0]
-        if not field:
-            val = doc
-        else:
-            val = doc.get(field)
-        #print doc, path, val
-        if not isinstance(val, list):
-            val = [val]
-        if len(path) > 1:
-            result = []
-            for v in val:
-                for subpath in path[1:]:
-                    subresult = self._get_values(v, subpath)
-                    for r in subresult:
-                        result.append(r)
-            return result
-        else:
-            return [self._serialize(v) for v in val]
+    # def _get_values(self, doc, path):
+    #     # generate all values for document's field
+    #     field = path[0]
+    #     if not field:
+    #         val = doc
+    #     else:
+    #         val = doc.get(field)
+    #     #print doc, path, val
+    #     if not isinstance(val, list):
+    #         val = [val]
+    #     if len(path) > 1:
+    #         result = []
+    #         for v in val:
+    #             for subpath in path[1:]:
+    #                 subresult = self._get_values(v, subpath)
+    #                 for r in subresult:
+    #                     result.append(r)
+    #         return result
+    #     else:
+    #         return [self._serialize(v) for v in val]
 
 
     def _serialize(self, val):

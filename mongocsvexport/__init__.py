@@ -145,46 +145,6 @@ class MongoExport(object):
             row = tuple(self._serialize(f.value) for f in row)
             yield row
 
-    # def _get_values(self, doc, path):
-    #     # generate all values for document's field
-    #     field = path[0]
-    #     if not field:
-    #         val = doc
-    #     else:
-    #         val = doc.get(field)
-    #     if not isinstance(val, list):
-    #         val = [val]
-    #     if len(path) > 1:
-    #         for v in val:
-    #             for subv in self._get_values(v, path[1:]):
-    #                 yield subv
-    #     else:
-    #         for v in val:
-    #             yield self._serialize(v)
-    #
-
-    # def _get_values(self, doc, path):
-    #     # generate all values for document's field
-    #     field = path[0]
-    #     if not field:
-    #         val = doc
-    #     else:
-    #         val = doc.get(field)
-    #     #print doc, path, val
-    #     if not isinstance(val, list):
-    #         val = [val]
-    #     if len(path) > 1:
-    #         result = []
-    #         for v in val:
-    #             for subpath in path[1:]:
-    #                 subresult = self._get_values(v, subpath)
-    #                 for r in subresult:
-    #                     result.append(r)
-    #         return result
-    #     else:
-    #         return [self._serialize(v) for v in val]
-
-
     def _serialize(self, val):
         if val is None:
             val = self.config['null_value']

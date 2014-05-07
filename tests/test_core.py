@@ -105,6 +105,15 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(result,
                          'foo1,\N\r\n\N,foo2\r\n')
 
+    def test_custom_delimiter(self):
+        export = self.create_instance(['f1','f2'],
+                                      [{'f1':'foo1', 'f2': 'one;two'},{'f2':'foo2'}],
+                                      {'delimiter': ';'})
+        export.run()
+        result = self.output.getvalue()
+        self.assertEqual(result,
+                         'foo1;"one;two"\r\n;foo2\r\n')
+
 
 
 class CreateTest(unittest.TestCase):
@@ -252,3 +261,7 @@ class CmdRunTests(unittest.TestCase):
         self.assertTrue(isinstance(ts, datetime))
         self.assertTrue(datetime(2014, 5, 8, 21, 12, tzinfo=ts.tzinfo) == ts)
 
+    @patch('sys.argv', required_args + ['--delimiter', ';'])
+    def test_delimiter(self):
+        args = self._run_main()
+        self.assertEqual(args[4], {'delimiter': ';'})

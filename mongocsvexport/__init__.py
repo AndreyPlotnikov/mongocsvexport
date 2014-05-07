@@ -99,6 +99,7 @@ class MongoExport(object):
     defaults = {
         'limit': None, # Limit number of documents to export
         'null_value': '',
+        'delimiter': ',',
         'query_cond': None,
     }
 
@@ -108,7 +109,7 @@ class MongoExport(object):
         self.collection = collection
         self.fields = fields
         self._output = self._init_output(output)
-        self._writer = csv.writer(self._output)
+        self._writer = csv.writer(self._output, delimiter=self.config['delimiter'])
         self._init_fields(fields)
 
     @classmethod
@@ -182,6 +183,8 @@ def main():
                         help='NULL value replacement (default is empty string)')
     parser.add_argument('--cond', dest='query_cond', type=bson_object,
                         help='Mongo query condition in form of JSON-object')
+    parser.add_argument('--delimiter', dest='delimiter',
+                        help='Fields delimiter (default is comma)')
     args = parser.parse_args()
     args = vars(args)
     fields = args.pop('fields')

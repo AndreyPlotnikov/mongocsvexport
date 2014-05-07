@@ -1,11 +1,14 @@
 """Export collection to csv file"""
+import json
 import sys
 import argparse
 import itertools
 import pymongo
 import csv
-from collections import OrderedDict
 import types
+import bson.json_util
+from collections import OrderedDict
+
 
 
 def get_params(prefix, args):
@@ -96,6 +99,7 @@ class MongoExport(object):
     defaults = {
         'limit': None, # Limit number of documents to export
         'null_value': '',
+        'query_cond': None,
     }
 
     def __init__(self, collection, fields, output, config):
@@ -133,7 +137,9 @@ class MongoExport(object):
 
     def _doc_iter(self):
         limit = self.config['limit']
-        for i, doc in enumerate(self.collection.find()):
+        query_cond = self.config['query_cond']
+        args = (query_cond,) if query_cond else ()
+        for i, doc in enumerate(self.collection.find(*args)):
             if limit and i >= limit:
                 break
             yield doc
@@ -154,6 +160,9 @@ class MongoExport(object):
             val = str(val)
         return val
 
+def bson_object(val):
+    """Create BSON-compatible dict from JSON-string"""
+    return bson.json_util.loads(val)
 
 def main():
     parser = argparse.ArgumentParser(argument_default=argparse.SUPPRESS)
@@ -169,6 +178,10 @@ def main():
                         help='Output file name. If not specified print to STDOUT')
     parser.add_argument('--limit', dest='limit', type=int,
                         help='Max number of documents')
+    parser.add_argument('--null', dest='null_value',
+                        help='NULL value replacement (default is empty string)')
+    parser.add_argument('--cond', dest='query_cond', type=bson_object,
+                        help='Mongo query condition in form of JSON-object')
     args = parser.parse_args()
     args = vars(args)
     fields = args.pop('fields')

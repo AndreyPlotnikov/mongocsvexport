@@ -4,6 +4,7 @@ from datetime import datetime
 import sys
 from mock import patch, MagicMock
 from StringIO import StringIO
+from bson.objectid import ObjectId
 from mongocsvexport import MongoExport, main
 
 
@@ -92,18 +93,18 @@ class CoreTests(unittest.TestCase):
                                         'hotel_id': 1000
                                        }])
         export.run()
-        # export = MongoExport(MagicMock(), [['hotel'],['rooms', 'name', 'price'], ['hotel_id']], MagicMock(), {})
-        # result = export._get_rows(
-        #     {'hotel':'Hilton',
-        #      'rooms': [
-        #          {'name': 'Standard', 'price': 100},
-        #          {'name': 'Deluxe', 'price': 120}],
-        #      'hotel_id': 1000
-        #     })
-        # #list(result)
-        print self.output.getvalue()
         self.assertEqual(self.output.getvalue(),
                          'Hilton,Standard,1000,100\r\nHilton,Deluxe,1000,120\r\n')
+
+    def test_custom_null(self):
+        export = self.create_instance(['f1','f2'],
+                                      [{'f1':'foo1', 'f2': None},{'f2':'foo2'}],
+                                      {'null_value': '\N'})
+        export.run()
+        result = self.output.getvalue()
+        self.assertEqual(result,
+                         'foo1,\N\r\n\N,foo2\r\n')
+
 
 
 class CreateTest(unittest.TestCase):
@@ -147,6 +148,19 @@ class MongoInteropTests(unittest.TestCase):
         result = list(export._doc_iter())
         self.assertEqual(len(result),1)
         self.assertEqual(result, [{'f1':'foo1'}])
+
+    def test_cond(self):
+        export = self.create_instance([{'f1':'foo1'},{'f1':'foo2'}],
+                                      {'query_cond': {'ts': {
+                                          '$gte' : datetime(2014,5,9)},
+                                          'state': 'success'}
+                                      })
+        result = list(export._doc_iter())
+        self.assertEqual(len(self.collection.find.call_args[0]), 1)
+        self.assertDictEqual(self.collection.find.call_args[0][0],
+                         {'ts': {'$gte' : datetime(2014,5,9)},
+                          'state': 'success'}
+                         )
 
 
 class CmdRunTests(unittest.TestCase):
@@ -214,3 +228,27 @@ class CmdRunTests(unittest.TestCase):
     def test_host(self):
         args = self._run_main()
         self.assertEqual(args[4], {'mongo_host': 'localhost:27034'})
+
+    @patch('sys.argv', required_args + ['--null', '\N'])
+    def test_pg_null(self):
+        args = self._run_main()
+        self.assertEqual(args[4], {'null_value': '\N'})
+
+    @patch('sys.argv', required_args + ['--cond', '{"state": "success"}'])
+    def test_simple_cond(self):
+        args = self._run_main()
+        self.assertEqual(args[4], {'query_cond': {"state": "success"}})
+
+    @patch('sys.argv', required_args + ['--cond', '{"_id": {"$oid": "524a118c1bf33d08f28c5391"}}'])
+    def test_objectid_cond(self):
+        args = self._run_main()
+        self.assertEqual(args[4], {'query_cond': {"_id": ObjectId("524a118c1bf33d08f28c5391")}})
+
+    @patch('sys.argv', required_args + ['--cond', '{"ts": {"$date": "1399583520000"}}'])
+    def test_datetime_cond(self):
+        args = self._run_main()
+        cond = args[4]['query_cond']
+        ts = cond['ts']
+        self.assertTrue(isinstance(ts, datetime))
+        self.assertTrue(datetime(2014, 5, 8, 21, 12, tzinfo=ts.tzinfo) == ts)
+

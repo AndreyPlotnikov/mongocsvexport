@@ -101,6 +101,7 @@ class MongoExport(object):
         'null_value': '',
         'delimiter': ',',
         'query_cond': None,
+        'header': False,
     }
 
     def __init__(self, collection, fields, output, config):
@@ -121,6 +122,8 @@ class MongoExport(object):
         return cls(collection, fields, output, config)
 
     def run(self):
+        if self.config['header']:
+            self._writer.writerow(self.fields)
         for doc in self._doc_iter():
             for row in self._get_rows(doc):
                 self._writer.writerow(row)
@@ -185,6 +188,8 @@ def main():
                         help='Mongo query condition in form of JSON-object')
     parser.add_argument('--delimiter', dest='delimiter',
                         help='Fields delimiter (default is comma)')
+    parser.add_argument('--header', dest='header', action='store_true',
+                        help='Output a header line with the name of each column')
     args = parser.parse_args()
     args = vars(args)
     fields = args.pop('fields')

@@ -114,6 +114,14 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(result,
                          'foo1;"one;two"\r\n;foo2\r\n')
 
+    def test_header(self):
+        export = self.create_instance(['f1','f,2'],
+                                      [{'f1':'foo1', 'f,2': 'one,two'}],
+                                      {'header': True})
+        export.run()
+        result = self.output.getvalue()
+        self.assertEqual(result,
+                         'f1,"f,2"\r\nfoo1,"one,two"\r\n')
 
 
 class CreateTest(unittest.TestCase):
@@ -265,3 +273,8 @@ class CmdRunTests(unittest.TestCase):
     def test_delimiter(self):
         args = self._run_main()
         self.assertEqual(args[4], {'delimiter': ';'})
+
+    @patch('sys.argv', required_args + ['--header'])
+    def test_header(self):
+        args = self._run_main()
+        self.assertEqual(args[4], {'header': True})

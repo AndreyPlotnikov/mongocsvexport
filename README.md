@@ -41,7 +41,7 @@ Let's imagine we have collection which contains the following documents:
 
 ```
 
-And then run mongocsvexport command:
+And if we run mongocsvexport command in such way:
 
 ```
 $ mongocsvexport -d testdt -c testcoll -f company,departments.title,departments.employees.last_name

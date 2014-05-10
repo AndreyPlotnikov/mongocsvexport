@@ -102,6 +102,7 @@ class MongoExport(object):
         'delimiter': ',',
         'query_cond': None,
         'header': False,
+        'psql_dump': None,
     }
 
     def __init__(self, collection, fields, output, config):
@@ -112,6 +113,10 @@ class MongoExport(object):
         self._output = self._init_output(output)
         self._writer = csv.writer(self._output, delimiter=self.config['delimiter'])
         self._init_fields(fields)
+        if self.config['psql_dump']:
+            self.config['delimiter'] = ','
+            self.config['header'] = False
+            self.config['null_value'] = ''
 
     @classmethod
     def create(cls, db_name, coll_name, fields, output, config):
@@ -124,9 +129,14 @@ class MongoExport(object):
     def run(self):
         if self.config['header']:
             self._writer.writerow(self.fields)
+        if self.config['psql_dump']:
+            self._output.write('COPY {} FROM stdin WITH (FORMAT csv);\n'.format(
+                self.config['psql_dump']))
         for doc in self._doc_iter():
             for row in self._get_rows(doc):
                 self._writer.writerow(row)
+        if self.config['psql_dump']:
+            self._output.write('\\.\n')
 
     def _init_fields(self, fields):
         self._fields_order_map = OrderedDict()
@@ -190,6 +200,8 @@ def main():
                         help='Fields delimiter (default is comma)')
     parser.add_argument('--header', dest='header', action='store_true',
                         help='Output a header line with the name of each column')
+    parser.add_argument('--psql-dump', dest='psql_dump',
+                        help='Output data as psql dump file')
     args = parser.parse_args()
     args = vars(args)
     fields = args.pop('fields')

@@ -123,6 +123,16 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(result,
                          'f1,"f,2"\r\nfoo1,"one,two"\r\n')
 
+    def test_psql_dump(self):
+        export = self.create_instance(['f1','f2'],
+                                      [{'f1':'foo1', 'f2': 'one,two'},{'f2':'foo2'}],
+                                      {'psql_dump': 'foo_table'})
+        export.run()
+        result = self.output.getvalue()
+        self.assertEqual(result,
+                         ('COPY foo_table FROM stdin WITH (FORMAT csv);\n'
+                          'foo1,"one,two"\r\n,foo2\r\n\.\n'))
+
 
 class CreateTest(unittest.TestCase):
     """MongoExport.create constructor test"""
@@ -278,3 +288,8 @@ class CmdRunTests(unittest.TestCase):
     def test_header(self):
         args = self._run_main()
         self.assertEqual(args[4], {'header': True})
+
+    @patch('sys.argv', required_args + ['--psql-dump', 'foo_table'])
+    def test_header(self):
+        args = self._run_main()
+        self.assertEqual(args[4], {'psql_dump': 'foo_table'})

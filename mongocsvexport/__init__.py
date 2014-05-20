@@ -8,6 +8,8 @@ import csv
 import types
 import bson.json_util
 from collections import OrderedDict
+import tqdm
+#from tqdm import tqdm
 
 
 
@@ -103,6 +105,7 @@ class MongoExport(object):
         'query_cond': None,
         'header': False,
         'psql_dump': None,
+        'show_progress': False,
     }
 
     def __init__(self, collection, fields, output, config):
@@ -153,7 +156,13 @@ class MongoExport(object):
         limit = self.config['limit']
         query_cond = self.config['query_cond']
         args = (query_cond,) if query_cond else ()
-        for i, doc in enumerate(self.collection.find(*args)):
+        cursor = self.collection.find(*args)
+        num_docs = cursor.count()
+        if self.config['show_progress']:
+            if limit:
+                num_docs = limit
+            cursor = tqdm.tqdm(cursor, total=num_docs)
+        for i, doc in enumerate(cursor):
             if limit and i >= limit:
                 break
             yield doc
@@ -202,8 +211,12 @@ def main():
                         help='Output a header line with the name of each column')
     parser.add_argument('--psql-dump', dest='psql_dump',
                         help='Output data as psql dump file')
+    parser.add_argument('-p', dest='show_progress', action='store_true',
+                        help='Show progress meter')
     args = parser.parse_args()
     args = vars(args)
+    if args.get('show_progress') and not args.get('output_file'):
+        parser.error('You must use the -o option with -p')
     fields = args.pop('fields')
     fields = [f.strip() for f in fields.split(',')]
     coll_name = args.pop('coll_name')
@@ -214,7 +227,11 @@ def main():
     else:
         output = sys.stdout
     export = MongoExport.create(db_name, coll_name, fields, output, args)
-    export.run()
+    try:
+        export.run()
+    except KeyboardInterrupt:
+        print >>sys.stderr, "Keyboard interrupt. Exiting..."
+        sys.exit(1)
 
 if __name__ == '__main__':
     main()

@@ -10,7 +10,8 @@ setup(
     author_email='plotnikoff@gmail.com',
     description='Utility that produces a CSV of data stored in a MongoDB',
     install_requires=[
-      'pymongo'
+      'pymongo',
+      'tqdm'
     ],
     entry_points={
         "console_scripts": [

@@ -79,9 +79,8 @@ class CoreTests(unittest.TestCase):
                                             {'sub':[{'sub2': 'one'}, {'sub2': 'two'}]},
                                             {'sub':[{'sub2': 'three'}]}]}], {})
         export.run()
-        print self.output.getvalue()
-        # self.assertEqual(self.output.getvalue(),
-        #                  'foo1,one\r\nfoo1,two\r\nfoo1,three\r\n')
+        self.assertEqual(self.output.getvalue(),
+                         'foo1,one\r\nfoo1,two\r\nfoo1,three\r\n')
 
 
     def test_several_sub_fields_lists_expansion(self):
@@ -153,13 +152,26 @@ class CreateTest(unittest.TestCase):
 
 class MongoInteropTests(unittest.TestCase):
 
+    class CursorMock(object):
+
+        def __init__(self, docs):
+            self.docs = docs
+
+        def __iter__(self):
+            return iter(self.docs)
+
+        def count(self, *args, **kwargs):
+            return len(self.docs)
+
     def setUp(self):
         self.collection = MagicMock()
 
     def create_instance(self, docs, config={}):
-        def find_mock(*args, **kwargs):
-            return docs
-        self.collection.find.side_effect = find_mock
+
+        # def find_mock(*args, **kwargs):
+        #     return docs
+        #self.collection.find.side_effect = find_mock
+        self.collection.find.return_value = self.CursorMock(docs)
         export = MongoExport(self.collection, ['f1'], MagicMock(), config)
         return export
 
@@ -188,6 +200,27 @@ class MongoInteropTests(unittest.TestCase):
                          {'ts': {'$gte' : datetime(2014,5,9)},
                           'state': 'success'}
                          )
+
+    def test_show_progress(self):
+        with patch('tqdm.tqdm') as tqdm_mock:
+            export = self.create_instance([{'f1':'foo1'},{'f1':'foo2'}],
+                                          {'show_progress': True})
+            tqdm_mock.return_value = [{'f1':'foo1', 'f2': 'one,twooo'},{'f2':'foo2'}]
+            export.run()
+        self.assertEqual(len(tqdm_mock.call_args_list), 1)
+        self.assertTrue(isinstance(tqdm_mock.call_args[0][0], self.CursorMock))
+        self.assertEqual(tqdm_mock.call_args[1].get('total'), 2)
+
+    def test_show_progress_with_limit(self):
+        with patch('tqdm.tqdm') as tqdm_mock:
+            export = self.create_instance([{'f1':'foo1'},{'f1':'foo2'}],
+                                          {'show_progress': True,
+                                           'limit': 1})
+            tqdm_mock.return_value = [{'f1':'foo1', 'f2': 'one,twooo'},{'f2':'foo2'}]
+            export.run()
+        self.assertEqual(len(tqdm_mock.call_args_list), 1)
+        self.assertTrue(isinstance(tqdm_mock.call_args[0][0], self.CursorMock))
+        self.assertEqual(tqdm_mock.call_args[1].get('total'), 1)
 
 
 class CmdRunTests(unittest.TestCase):
@@ -293,3 +326,17 @@ class CmdRunTests(unittest.TestCase):
     def test_header(self):
         args = self._run_main()
         self.assertEqual(args[4], {'psql_dump': 'foo_table'})
+
+    @patch('sys.argv', required_args + ['-p'])
+    def test_progress_without_output(self):
+        stderr = StringIO()
+        with patch('sys.stderr', stderr):
+            with self.assertRaises(SystemExit):
+                main()
+        output = stderr.getvalue()
+        self.assertTrue('You must use the -o' in output)
+
+    @patch('sys.argv', required_args + ['-o', 'output.csv', '-p'])
+    def test_progress(self):
+        args = self._run_main()
+        self.assertEqual(args[4], {'show_progress': True})
